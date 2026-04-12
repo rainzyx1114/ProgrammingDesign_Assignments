@@ -7,27 +7,18 @@ class CArray3D
 {
 // 在此处补充你的代码
 public:
-    int dim1, dim2, dim3;
-    T* p;
-    CArray3D(int a, int b, int c) {
-        p = new T[a * b * c];
-        dim1 = a;
-        dim2 = b;
-        dim3 = c;
-    }
-    class CArray2D {
-        public:
-        int dim;
-        T* ptr;
-        CArray2D(T* temp, int n):ptr(temp), dim(n) {}
-        T* operator[] (int idx) {
-            return ptr + idx * dim;
-        }
-        operator T*() {return ptr;}
-    };
-    CArray2D operator[] (int idx) {
-        return CArray2D(p + (dim2 * dim3) * idx, dim3);
-    }
+	int dim1, dim2, dim3;
+	T* p;
+	CArray3D(int a, int b, int c):dim1(a), dim2(b), dim3(c), p(new T[a * b * c]) {}
+	class CArray2D {
+		public:
+			int dim;
+			T* ptr;
+			CArray2D(T* temp, int d):ptr(temp), dim(d) {}
+			T* operator[] (int idx) {return (ptr + idx * dim);}
+			operator T*() {return ptr;}
+	};
+	CArray2D operator[] (int idx) {return CArray2D((p + idx * dim2 * dim3), dim3);}
 };
 
 CArray3D<int> a(3,4,5);
