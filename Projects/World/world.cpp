@@ -6,558 +6,805 @@
 #include <algorithm>
 #include <stdlib.h>
 #include <stack>
+#include <memory>
 
 using namespace std;
 
 class warrior;
+
+enum class WeaponType {
+    sword,
+    bomb,
+    arrow
+};
+
+enum class WarriorType {
+    dragon,
+    ninja,
+    iceman,
+    lion,
+    wolf
+};
+
+class headquarter {
+    WarriorType loop[5];
+    int loopcount{0};
+    public:
+        vector<unique_ptr<warrior>> warriors;
+        string name;
+        int totallife{0};
+        int location;
+        headquarter(const char* n):name(n) {
+            if (n == "red") {
+                loop[0] = WarriorType::iceman;loop[1] = WarriorType::lion;loop[2] = WarriorType::wolf;loop[3] = WarriorType::ninja;loop[4] = WarriorType::dragon;
+            }
+            else if (n == "blue") {
+                loop[0] = WarriorType::lion;loop[1] = WarriorType::dragon;loop[2] = WarriorType::ninja;loop[3] = WarriorType::iceman;loop[4] = WarriorType::wolf;
+            }
+        }
+        void reset();
+        int get_op_location();
+        void warrior_create(WarriorType t);
+        bool produce(int hour, int min);
+};
+
 class city {
         public:
+            int flag{0}; // red->1, blue->-1
+            int win_log{0}; // red->1, blue->-1
+            int life{0};
             int location;
             warrior* red_warrior{nullptr};
             warrior* blue_warrior{nullptr};
             city(int l): location(l) {}
-            void war(int hour, int min);
+            string beg_war() {
+                if (flag == 1) {return "red";}
+                else if (flag == -1) {return "blue";}
+                else {
+                    return (location % 2 == 0? "blue" : "red");
+                }
+            }
 };
 
 vector<city> cities;
-int N;
+int N; // the number of cities
+int R; // the damage of arrow
+int K; // the decrease of lion's loyalty
 
-struct weapon {
+struct WeaponConfig {
     string name;
-    int use{0};
-    int mark;
-    weapon(const char* s, int m): name(s), use(0), mark(m){}
+    int use_times{0};
+    int damage;
+};
+
+const char* WeaponNames[3] {"sword", "bomb", "arrow"};
+struct weapon {
+    WeaponConfig config;
+    WeaponType type;
+    weapon() = default;
     virtual void attack(warrior* attacker, warrior* opponent) {}
-    virtual bool is_use() {return true;}
+    virtual bool is_useful() {return true;}
     virtual ~weapon() = default;
 };
 
-string w[3] = {"sword", "bomb", "arrow"};
+struct WarriorConfig {
+    string name;
+    int life;
+    int mark;
+    int damage;
+    int location;
+    headquarter* belong;
+    bool alive;
+    bool win;
+};
 
+const char* WarriorNames[5] = {"dragon", "ninja", "iceman", "lion", "wolf"};
+
+WarriorConfig configs[5];
 class warrior {
-    protected:
-        int life;
-        string warrior_name;
-        int damage;    
-        int location;
-        
     public:
-        vector<weapon*> weapons;
-        int mark;
-        char belong;
-        bool alive{true};
-
-        warrior(int m, int l, string n, int d):mark(m), life(l), warrior_name(n), damage(d){}
-        warrior() = default;
-        warrior(string n):warrior_name(n){}
+        double courage{0};
+        int loyalty{0};
+        WarriorConfig config;
+        WarriorType type;
+        vector <unique_ptr<weapon>> weapons;
+        warrior(WarriorType t, headquarter* b, int m) {
+            int idx = static_cast<int>(t);
+            type = t;
+            config.life = configs[idx].life;
+            config.name = WarriorNames[idx];
+            config.damage = configs[idx].damage;
+            config.mark = m;
+            config.alive = true;
+            config.belong = b;
+            config.location = b->location;
+            config.win = false;
+        }
         virtual ~warrior(){
-            for (auto w : weapons) {
-                if (w != nullptr) {
-                    delete w;
-                } 
-            }
-            // cout << "I'm here" << endl;
             weapons.clear();
         }
-        int get_life() const{return life;}
-        int get_damage() const{return damage;}
-        int get_location() const{return location;}
-        string get_warrior_name() const{return warrior_name;}
-        void set_life(int l) {life = l;}
-        void set_damage(int d) {damage = d;}
-        void set_location(int l) {location = l;}
-        void belong_to(char b) {belong = b;}
-        virtual void rob(int hour, int min, warrior* opponent) {}
-        virtual void fire(warrior* opponent, weapon* w) {}
+        virtual void win(warrior* opponent) {config.win = true;}
+        virtual void lose() {config.win = false;}
         virtual void hurt(int d) {
-            life -= d;
-            if (life <= 0){alive = false;life = 0;}
+            config.life -= d;
+            if (config.life <= 0){
+                config.alive = false;
+                config.life = 0;
+            }
         }
-        virtual void move(int k) {
-            if (belong == 'r') {
-                if (location == N + 1) return;
-                cities[location].red_warrior = nullptr;
-                location ++;
-                cities[location].red_warrior = this;
-                
+        virtual void fire(warrior* opponent, weapon* w) {
+            w->attack(this, opponent);
+            opponent->hurt(config.damage);
+        }
+        virtual void feedback(warrior* opponent, weapon* w) {
+            w->attack(this, opponent);
+            opponent->hurt(config.damage / 2);
+        }
+        virtual bool move(int k) {
+            if (config.belong->name == "red") {
+                if (config.location == N && cities[config.location + 1].red_warrior != nullptr) {
+                    cities[config.location].red_warrior = nullptr;
+                    config.location ++;
+                    cities[config.location].red_warrior = this;
+                    return true;
+                } 
+                if (config.location == N + 1) return false;
+                cities[config.location].red_warrior = nullptr;
+                config.location ++;
+                cities[config.location].red_warrior = this;
             }
-            else if (belong == 'b') {
-                if (location == 0) return;
-                cities[location].blue_warrior = nullptr;
-                location --;
-                cities[location].blue_warrior = this;
+            else if (config.belong->name == "blue") {
+                if (config.location == 1 && cities[config.location - 1].blue_warrior != nullptr) {
+                    cities[config.location].blue_warrior = nullptr;
+                    config.location --;
+                    cities[config.location].blue_warrior = this;
+                    return true;
+                }
+                if (config.location == 0) return false;
+                cities[config.location].blue_warrior = nullptr;
+                config.location --;
+                cities[config.location].blue_warrior = this;
             }
+            return false;
         }
         void report(int hour, int min) {
-            if (!alive) {return;}
-            int sw{0}, bom(0), arr(0);
-            for (const auto& w: weapons) {
-                if (w != nullptr && w->is_use()) {
-                    if (w->mark == 0) {sw++;}
-                    else if (w->mark == 1) {bom++;}
-                    else if (w->mark == 2) {arr++;}
+            set_weapons();
+            int arr{0},sw{0},bom{0};
+            for (const auto& weapon: weapons) {
+                if (weapon->type == WeaponType::arrow) {
+                    arr = 3 - weapon->config.use_times;
+                }
+                else if (weapon->type == WeaponType::sword) {
+                    sw = weapon->config.damage;
+                }
+                else if (weapon->type == WeaponType::bomb) {
+                    bom = 1;
                 }
             }
-            printf("%03d:%02d %s %s %d has %d sword %d bomb %d arrow and %d elements\n", hour, min, belong == 'r'? "red":"blue", warrior_name.c_str(), mark, sw, bom, arr, life);
+            printf("%03d:%02d %s %s %d has ", hour, min, config.belong->name.c_str(), config.name.c_str(), config.mark);
+            if (arr > 0) {
+                printf("arrow(%d)", arr);
+            }
+            if (bom > 0) {
+                if (arr > 0) {printf(",");}
+                printf("bomb");
+            }
+            if (sw > 0) {
+                if (arr > 0 || bom > 0) {printf(",");}
+                printf("sword(%d)", sw);
+            }
+            if (arr == 0 && bom == 0 && sw == 0) {
+                printf("no weapon");
+            }
+            printf("\n");
         }
-        bool cmp1(weapon* w1, weapon* w2) {
-            if (w1 != nullptr && w2 == nullptr) {return true;}
-            else if (w1 == nullptr && w2 != nullptr) {return false;}
-            else if (w1 == nullptr && w2 == nullptr) {return false;}
-            if (w1->mark != w2->mark) {
-                return w1->mark < w2->mark;
-            }
-            else {
-                if (w1->name == "arrow") {
-                    return w1->use > w2->use;
+        void set_weapons() {
+            for (auto it = weapons.begin(); it != weapons.end(); it ++) {
+                if (!(*it)->is_useful()) {
+                    (*it).reset();
+                    weapons.erase(it);
                 }
             }
-            return false;
-        };
-        bool cmp2(weapon* w1, weapon* w2) {
-            if (w1 != nullptr && w2 == nullptr) {return true;}
-            else if (w1 == nullptr && w2 != nullptr) {return false;}
-            else if (w1 == nullptr && w2 == nullptr) {return false;}
-            if (w1->mark != w2->mark) {
-                return w1->mark < w2->mark;
-            }
-            else {
-                if (w1->name == "arrow") {
-                    return w1->use < w2->use;
-                }
-            }
-            return false;
         }
-        void set_weapons1() {
-            sort(weapons.begin(), weapons.end(), [this](weapon* a, weapon*b){return this->cmp1(a, b);});
-            auto it = remove_if(weapons.begin(), weapons.end(), [](weapon* w) {
-                if (w == nullptr){return true;}
-                else if (!w->is_use()) {
-                    delete w;
-                    return true;
-                }
-                else{return false;}
-            });
-            weapons.erase(it, weapons.end());
-        }
-        void set_weapons2() {
-            sort(weapons.begin(), weapons.end(), [this](weapon* a, weapon*b){return this->cmp2(a, b);});
-            auto it = remove_if(weapons.begin(), weapons.end(), [](weapon* w) {
-                if (w == nullptr){return true;}
-                else if (!w->is_use()) {
-                    delete w;
-                    return true;
-                }
-                else{return false;}
-            });
-            weapons.erase(it, weapons.end());
-        }
-        virtual int get_loyalty()const{return 1000;};
 };
-
-warrior* ice = new warrior("iceman");
-warrior* lio = new warrior("lion");
-warrior* wol = new warrior("wolf");
-warrior* nin = new warrior("ninja");
-warrior* dra = new warrior("dragon");
-
 class sword:public weapon {
     public:
-        sword():weapon("sword", 0) {}
-        void attack(warrior* attacker, warrior* opponent) {
-            opponent->hurt(attacker->get_damage() / 5);
+        sword(warrior& belonger):weapon() {
+            config.name = WeaponNames[0];
+            config.use_times = 0;
+            config.damage = belonger.config.damage / 5;
+            type = WeaponType::sword;
         }
-        bool is_use() {return true;}
+        void attack(warrior* attacker, warrior* opponent) {
+            opponent->hurt(config.damage);
+            config.damage = config.damage * 4 / 5;
+            config.use_times ++;
+        }
+        bool is_useful() {
+            return config.damage != 0;
+        }
 };
-
 class bomb:public weapon {
     public:
-        bomb():weapon("bomb", 1) {}
-        void attack(warrior* attacker, warrior* opponent) {
-            // cout << "bomb attack" << endl;
-            int d = attacker->get_damage() * 2 / 5;
-            opponent->hurt(d);
-            if (attacker->get_warrior_name() != "ninja"){attacker->hurt(d / 2);}
-            use = 1;
+        bomb(warrior& belonger):weapon() {
+            config.name = WeaponNames[1];
+            config.use_times = 0;
+            config.damage = 0;
+            type = WeaponType::bomb;
         }
-        bool is_use() {return use != 1;}
+        void attack(warrior* attacker, warrior* opponent) {
+            attacker->hurt(attacker->config.damage);
+            opponent->hurt(opponent->config.damage);
+            config.use_times ++;
+        }
+        bool is_useful() {return config.use_times < 1;}
 };
-
 class arrow:public weapon {
     public:
-        arrow():weapon("arrow", 2) {}
+        arrow(warrior& belonger):weapon() {
+            config.name = WeaponNames[2];
+            config.use_times = 0;
+            config.damage = R;
+            type = WeaponType::arrow;
+        }
         void attack(warrior* attacker, warrior* opponent) {
-            opponent->hurt(attacker->get_damage() * 3 / 10);
-            use ++;
+            opponent->hurt(config.damage);
+            config.use_times ++;
         }
-        bool is_use() {return use <= 1;}
+        bool is_useful() {return config.use_times <= 3;}
 };
-
 class dragon: public warrior {
-        double courage;
     public:
-        dragon(int m, int l, string n, int lef, int d):warrior::warrior(m, l, n, d), courage(static_cast<double>(lef) / l){
-            string s = w[m % 3];
-            if (s == "sword") {
-                weapons.push_back(new sword());
+        dragon(WarriorType t, headquarter* b, int m):warrior(t, b, m) {
+            int tmp = m % 3;
+            switch(tmp) {
+                case(0):
+                weapons.push_back(make_unique<sword>(*this));
+                break;
+                case(1):
+                weapons.push_back(make_unique<bomb>(*this));
+                break;
+                case(2):
+                weapons.push_back(make_unique<arrow>(*this));
+                break;
             }
-            else if(s == "bomb") {
-                weapons.push_back(new bomb());
-            }
-            else if(s == "arrow") {
-                weapons.push_back(new arrow());
-            }
+            courage = b->totallife / config.life;
         }
-        double get_courage() const{return courage;};
-        void fire(warrior* opponent, weapon* w) {
-            w->attack(this, opponent);
+        void win(warrior* opponent) {
+            courage += 0.2;
+        }
+        void lose() {
+            courage -= 0.2;
         }
 };
-
 class ninja: public warrior {
     public:
-        ninja(int m, int l, string n, int d):warrior::warrior(m, l, n, d) {
-            string s1 = w[m % 3];
-            if (s1 == "sword") {
-                weapons.push_back(new sword());
+        ninja(WarriorType t, headquarter* b, int m):warrior(t, b, m) {
+            int tmp1 = m % 3;
+            int tmp2 = (m + 1) % 3;
+            switch(tmp1) {
+                case(0):
+                weapons.push_back(make_unique<sword>(*this));
+                break;
+                case(1):
+                weapons.push_back(make_unique<bomb>(*this));
+                break;
+                case(2):
+                weapons.push_back(make_unique<arrow>(*this));
+                break;
             }
-            else if(s1 == "bomb") {
-                weapons.push_back(new bomb());
-            }
-            else if(s1 == "arrow") {
-                weapons.push_back(new arrow());
-            }
-            string s2 = w[(m + 1) % 3];
-            if (s2 == "sword") {
-                weapons.push_back(new sword());
-            }
-            else if(s2 == "bomb") {
-                weapons.push_back(new bomb());
-            }
-            else if(s2 == "arrow") {
-                weapons.push_back(new arrow());
-            }
-        }
-        void fire(warrior* opponent, weapon* w) {
-            w->attack(this, opponent);
-        }
-};
-
-class iceman: public warrior {
-    public:
-        iceman(int m, int l, string n, int d):warrior::warrior(m, l, n, d) {
-            string s = w[m % 3];
-            if (s == string("sword")) {
-                weapons.push_back(new sword());
-            }
-            else if(s == string("bomb")) {
-                weapons.push_back(new bomb());
-            }
-            else if(s == string("arrow")) {
-                weapons.push_back(new arrow());
+            switch(tmp2) {
+                case(0):
+                weapons.push_back(make_unique<sword>(*this));
+                break;
+                case(1):
+                weapons.push_back(make_unique<bomb>(*this));
+                break;
+                case(2):
+                weapons.push_back(make_unique<arrow>(*this));
+                break;
             }
         }
-        void fire(warrior* opponent, weapon* w) {
-            w->attack(this, opponent);
-        }
-        void move( int k) {
-            life -= life / 10;
-            warrior::move(k);
-        }
-};
-
-class lion: public warrior {
-    int loyalty;
-    public:
-        lion(int m, int l, string n, int lef, int d):warrior::warrior(m, l, n, d), loyalty(lef) {
-            string s = w[m % 3];
-            if (s == "sword") {
-                weapons.push_back(new sword());
-            }
-            else if(s == "bomb") {
-                weapons.push_back(new bomb());
-            }
-            else if(s == "arrow") {
-                weapons.push_back(new arrow());
-            }
-        }
-        int get_loyalty()const{return loyalty;}
-        void fire(warrior* opponent, weapon* w) {
-            w->attack(this, opponent);
-        }
-        void move(int k) {
-            loyalty -= k;
-            warrior::move(k);
-        }
-};
-
-class wolf: public warrior {
-    public:
-        using warrior::warrior;
-        void fire(warrior* opponent, weapon* w) {
-            w->attack(this, opponent);
-        }
-        void rob(int hour, int min, warrior* opponent) {
-            if (opponent->get_warrior_name() == "wolf") return;
-            else if(!opponent->weapons.empty() && opponent->weapons[0] != nullptr){
-                if (opponent->weapons[0]->mark == 0) {
-                    int count = 0;
-                    for (int i = 0; i < opponent->weapons.size() && weapons.size() < 10; i ++) {
-                        weapon* w = opponent->weapons[i];
-                        if (w == nullptr || w->name != "sword") {break;}
-                        else {
-                            count ++;
-                            weapons.push_back(w);
-                            opponent->weapons[i] = nullptr;
-                        }
-                    }
-                    printf("%03d:%02d %s %s %d took %d sword from %s %s %d in city %d\n", hour, min, belong == 'r'? "red":"blue", warrior_name.c_str(), mark, count, belong=='r'? "blue":"red", opponent->get_warrior_name().c_str(), opponent->mark, location);
-                }
-                else if(opponent->weapons[0]->mark == 1) {
-                    int count = 0;
-                    for (int i = 0; i < opponent->weapons.size() && weapons.size() < 10; i ++) {
-                        weapon* w = opponent->weapons[i];
-                        if (w == nullptr || w->name != "bomb") {break;}
-                        else {
-                            count ++;
-                            weapons.push_back(w);
-                            opponent->weapons[i] = nullptr;
-                        }
-                    }
-                    printf("%03d:%02d %s %s %d took %d bomb from %s %s %d in city %d\n", hour, min, belong == 'r'? "red":"blue", warrior_name.c_str(), mark, count, belong=='r'? "blue":"red", opponent->get_warrior_name().c_str(), opponent->mark, location);
-                }
-                else if(opponent->weapons[0]->mark == 2) {
-                    int count = 0;
-                    for (int i = 0; i < opponent->weapons.size() && weapons.size() < 10; i ++) {
-                        weapon* w = opponent->weapons[i];
-                        if (w == nullptr || w->name != "arrow") {break;}
-                        else {
-                            count ++;
-                            weapons.push_back(w);
-                            opponent->weapons[i] = nullptr;
-                        }
-                    }
-                    printf("%03d:%02d %s %s %d took %d arrow from %s %s %d in city %d\n", hour, min, belong == 'r'? "red":"blue", warrior_name.c_str(), mark, count, belong=='r'? "blue":"red", opponent->get_warrior_name().c_str(), opponent->mark, location);
-                }
-            }
+        void feedback(warrior* opponent, weapon* w) {
             return;
         }
 };
-
-class headquarter {
-    int totallife{0};
-    int loopcount{0};
-    int total_warrior{0};
-    string name;
-    array <warrior*, 5> loops;
-    vector<dragon*> dragons;
-    vector<ninja*> ninjas;
-    vector<iceman*> icemans;
-    vector<lion*> lions;
-    vector<wolf*> wolfs;
-
+class iceman: public warrior {
+    int move_times{0};
     public:
-        int location;
-        headquarter(string n, const array<warrior*, 5>& loop):name(n), loops(loop){}
-
-        void set_totallife(int l) {totallife = l;};
-        int get_totallife() const{return totallife;};
-        void reset(){
-            loopcount = 0;
-            total_warrior = 0;
-            for(auto d: dragons) {delete d;}
-            for(auto n: ninjas) {delete n;}
-            for(auto i: icemans) {delete i;}
-            for(auto l: lions) {delete l;}
-            for(auto w: wolfs) {delete w;}
-            dragons.clear();
-            ninjas.clear();
-            icemans.clear();
-            lions.clear();
-            wolfs.clear();
-        };
-        string get_name() const{return name;}
-        int get_op_location() {return (N + 1 - location);}
-        bool produce(int hour, int min) {
-            if (totallife < loops[loopcount]->get_life()) {
-                return false;
+        iceman(WarriorType t, headquarter* b, int m):warrior(t, b, m) {
+            int tmp = m % 3;
+            switch(tmp) {
+                case(0):
+                weapons.push_back(make_unique<sword>(*this));
+                break;
+                case(1):
+                weapons.push_back(make_unique<bomb>(*this));
+                break;
+                case(2):
+                weapons.push_back(make_unique<arrow>(*this));
+                break;
             }
-            else {
-                printf("%03d:%02d ", hour, min);
-                totallife -= loops[loopcount]->get_life();
-                total_warrior ++;
-                if (name == "red") {
-                    switch(loopcount) {
-                        case 0:
-                            icemans.push_back(new iceman(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), loops[loopcount]->get_damage()));
-                            icemans.back()->belong_to('r');icemans.back()->set_location(0);
-                            cities[0].red_warrior = icemans.back();
-                            printf("red iceman %d born\n", total_warrior);
-                            break;
-                        case 1:
-                            lions.push_back(new lion(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), totallife, loops[loopcount]->get_damage()));
-                            lions.back()->belong_to('r');
-                            cities[0].red_warrior = lions.back();lions.back()->set_location(0);
-                            printf("red lion %d born\n", total_warrior);
-                            printf("Its loyalty is %d\n", lions.back()->get_loyalty());
-                            break;
-                        case 2:
-                            wolfs.push_back(new wolf(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), loops[loopcount]->get_damage()));
-                            cities[0].red_warrior = wolfs.back();wolfs.back()->set_location(0);
-                            wolfs.back()->belong_to('r');
-                            printf("red wolf %d born\n", total_warrior);
-                            break;
-                        case 3:
-                            ninjas.push_back(new ninja(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), loops[loopcount]->get_damage()));
-                            cities[0].red_warrior = ninjas.back();ninjas.back()->set_location(0);
-                            ninjas.back()->belong_to('r');
-                            printf("red ninja %d born\n", total_warrior);
-                            break;
-                        case 4:
-                            dragons.push_back(new dragon(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), totallife, loops[loopcount]->get_damage()));
-                            cities[0].red_warrior = dragons.back();dragons.back()->set_location(0);
-                            dragons.back()->belong_to('r');
-                            printf("red dragon %d born\n", total_warrior);
-                            break;
-                        }
-                    }
-                else if (name == "blue") {
-                    switch(loopcount) {
-                            case 0:
-                                lions.push_back(new lion(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), totallife, loops[loopcount]->get_damage()));
-                                cities[N + 1].blue_warrior = lions.back();lions.back()->set_location(N + 1);
-                                lions.back()->belong_to('b');
-                                printf("blue lion %d born\n", total_warrior);
-                                printf("Its loyalty is %d\n", lions.back()->get_loyalty());
-                                break;
-                            case 1:
-                                dragons.push_back(new dragon(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), totallife, loops[loopcount]->get_damage()));
-                                cities[N + 1].blue_warrior = dragons.back();dragons.back()->set_location(N + 1);
-                                dragons.back()->belong_to('b');
-                                printf("blue dragon %d born\n", total_warrior);
-                                break;
-                            case 2:
-                                ninjas.push_back(new ninja(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), loops[loopcount]->get_damage()));
-                                cities[N + 1].blue_warrior = ninjas.back();ninjas.back()->set_location(N + 1);
-                                ninjas.back()->belong_to('b');
-                                printf("blue ninja %d born\n", total_warrior);
-                                break;
-                            case 3:
-                                icemans.push_back(new iceman(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), loops[loopcount]->get_damage()));
-                                cities[N + 1].blue_warrior = icemans.back();icemans.back()->set_location(N + 1);
-                                icemans.back()->belong_to('b');
-                                printf("blue iceman %d born\n", total_warrior);
-                                break;
-                            case 4:
-                                wolfs.push_back(new wolf(total_warrior, loops[loopcount]->get_life(), loops[loopcount]->get_warrior_name(), loops[loopcount]->get_damage()));
-                                cities[N + 1].blue_warrior = wolfs.back();wolfs.back()->set_location(N + 1);
-                                wolfs.back()->belong_to('b');
-                                printf("blue wolf %d born\n", total_warrior);
-                                break;
-                        }
+        }
+        bool move( int k) {
+            move_times ++;
+            if (move_times != 0 && move_times % 2 == 0) {
+                config.life -= 9;
+                if (config.life <= 0) {
+                    config.life = 1;
                 }
-                loopcount = (loopcount + 1) % 5;
-                return true;
+                config.damage += 20;
+            }
+            bool tmp = warrior::move(k);
+            return tmp;
+        }
+};
+class lion: public warrior {
+    public:
+        lion(WarriorType t, headquarter* b, int m):warrior(t, b, m) {
+            loyalty = b->totallife;
+        }
+        void lose() {
+            config.win = false;
+            loyalty -= K;
+        }
+};
+class wolf: public warrior {
+    public:
+        using warrior::warrior;
+        void win(warrior* opponent) {
+            while(!opponent->weapons.empty()) {
+                weapons.push_back(std::move(opponent->weapons.back()));
+                opponent->weapons.pop_back();
             }
         }
 };
 
-headquarter red("red", {ice, lio, wol, nin, dra});
-headquarter blue("blue", {lio, dra, nin, ice, wol});
+void headquarter::reset(){
+    warriors.clear();
+};
 
-void city::war(int hour, int min) {
-    int flag = 0;
-    int red_life = red_warrior->get_life();
-    int blue_life = blue_warrior->get_life();
-    int r_index = 0;
-    int b_index = 0;
-    int limit = 5000;
-    while(limit --) {
-        if(red_life > 0 && blue_life <= 0) {flag = 1;break;}
-        if(red_life <= 0 && blue_life > 0) {flag = -1;break;}
-        if(red_life <= 0 && blue_life <= 0) {flag = -2;break;}
-        weapon* r_w = nullptr;
-        weapon* b_w = nullptr;
-        for (int i = 0; i < red_warrior->weapons.size(); i ++) {
-            // cout << "I'm here" << endl;
-            if (red_warrior->weapons[r_index] != nullptr && red_warrior->weapons[r_index]->is_use()) {
-                r_w = red_warrior->weapons[r_index];
-                r_index = (r_index + 1) % (red_warrior->weapons.size());
+int headquarter::get_op_location() {return (N + 1 - location);}
+
+void headquarter::warrior_create(WarriorType t) {
+    switch(t) {
+        case WarriorType::dragon:
+            warriors.push_back(make_unique<dragon>(WarriorType::dragon, this, warriors.size() + 1));
+            break;
+        case WarriorType::ninja:
+            warriors.push_back(make_unique<ninja>(WarriorType::ninja, this, warriors.size() + 1));
+            break;
+        case WarriorType::iceman:
+            warriors.push_back(make_unique<iceman>(WarriorType::iceman, this, warriors.size() + 1));
+            break;
+        case WarriorType::lion:
+            warriors.push_back(make_unique<lion>(WarriorType::lion, this, warriors.size() + 1));
+            break;
+        case WarriorType::wolf:
+            warriors.push_back(make_unique<wolf>(WarriorType::wolf, this, warriors.size() + 1));
+            break;
+    }
+    if (name == "red") {
+        cities[0].red_warrior = warriors.back().get();
+    }
+    else if (name == "blue") {
+        cities[N + 1].blue_warrior = warriors.back().get();
+    }
+}
+
+bool headquarter::produce(int hour, int min) {
+    WarriorType t = loop[loopcount];
+    int idx = static_cast<int>(t);
+    if (configs[idx].life > totallife) {
+        return false;
+    }
+    else {
+        totallife -= configs[idx].life;
+        warrior_create(t);
+        printf("%03d:%02d %s %s %d born\n", hour, min, name.c_str(), WarriorNames[idx], warriors.back()->config.mark);
+        if (t == WarriorType::dragon) {
+            printf("Its morale is %.2lf\n", warriors.back()->courage);
+        }
+        else if (t == WarriorType::lion) {
+            printf("Its loyalty is %d\n", warriors.back()->loyalty);
+        }
+        loopcount = (loopcount + 1) % 5;
+        return true;
+    }
+}
+
+headquarter red("red");
+headquarter blue("blue");
+
+class GameEngine {
+    public:
+    int hour{0};
+    int min{0};
+    void loop(int upper);
+    void produce();
+    void lion_runaway();
+    bool warriors_move();
+    void cities_generate();
+    void warriors_take();
+    void use_arrow();
+    void use_bomb();
+    void after_win(warrior* winner, warrior* loser, bool beg, int i);
+    void war();
+    void headquarters_report();
+    void warriors_report();
+};
+
+void GameEngine::loop(int upper) {
+    bool end = false;
+    while(min + 60 * hour <= upper) {
+        if (min == 0) {
+            produce();
+        }
+        else if (min == 5) {
+            lion_runaway();
+        }
+        else if (min == 10) {
+            end = warriors_move();
+        }
+        if (end) {break;}
+        else if (min == 20) {
+            cities_generate();
+        }
+        else if (min == 30) {
+            warriors_take();
+        }
+        else if (min == 35) {
+            use_arrow();
+        }
+        else if (min == 38) {
+            use_bomb();
+        }
+        else if (min == 40) {
+            war();
+        }
+        else if (min == 50) {
+            headquarters_report();
+        }
+        else if (min == 55) {
+            warriors_report();
+        }
+        min ++;
+        if (min == 60) {hour += 1; min = 0;}
+    }
+}
+
+void GameEngine::produce() {
+    red.produce(hour, min);
+    blue.produce(hour, min);
+}
+
+void GameEngine::lion_runaway() {
+    for (int i = 0; i <= N + 1; i ++) {
+        warrior* r = cities[i].red_warrior;
+        warrior* b = cities[i].blue_warrior;
+        if (r != nullptr && r->type == WarriorType::lion) {
+            if (r->loyalty <= 0 && i != N + 1) {
+                cities[i].red_warrior = nullptr;
+                printf("%03d:%02d red lion %d ran away", hour, min, r->config.mark);
+                r->config.alive = false;
+                r = nullptr;
+            }
+        }
+        else if (b != nullptr && b->type == WarriorType::lion) {
+            if (b->loyalty <= 0 && i != 0) {
+                cities[i].blue_warrior = nullptr;
+                printf("%03d:%02d blue lion %d ran away", hour, min, r->config.mark);
+                b->config.alive = false;
+                b = nullptr;
+            }
+        }
+    }
+}
+
+bool GameEngine::warriors_move() {
+    bool r_end = false;
+    bool b_end = false;
+    for (int i = N ; i >= 0; i --) {
+        if (cities[i].red_warrior != nullptr) {
+            if (i == N) {r_end = cities[i].red_warrior->move(K);}
+            else {cities[i].red_warrior->move(K);}
+        }
+    }
+    for (int i = 1; i <= N + 1; i ++) {
+        if (cities[i].blue_warrior != nullptr) {
+            if (i == 1) {b_end = cities[i].blue_warrior->move(K);} 
+            else {cities[i].blue_warrior->move(K);}
+        }
+    }
+    for (int i = 0; i <= N + 1; i++) {
+        warrior* r = cities[i].red_warrior;
+        warrior* b = cities[i].blue_warrior;
+        if (r != nullptr) {
+            printf("%03d:%02d ", hour, min);
+            if (i == N + 1) {
+                printf("red %s %d reached blue headquarter with %d elements and force %d\n", r->config.name.c_str(), r->config.mark, r->config.life, r->config.damage);
+            }
+            else {
+                printf("red %s %d marched to city %d with %d elements and force %d\n", r->config.name.c_str(), r->config.mark, r->config.location, r->config.life, r->config.damage);
+            }
+            if (r_end){
+                printf("%03d:%02d ", hour, min);
+                printf("blue headquarter was taken\n");
+            }
+        }
+        if (b != nullptr) {
+            printf("%03d:%02d ", hour, min);
+            if (i == 0) {
+                printf("blue %s %d reached red headquarter with %d elements and force %d\n", b->config.name.c_str(), b->config.mark, b->config.life, b->config.damage);
+            }
+            else {
+                 printf("blue %s %d marched to city %d with %d elements and force %d\n", b->config.name.c_str(), b->config.mark, b->config.location, b->config.life, b->config.damage);
+            }   
+            if (b_end) {
+                printf("%03d:%02d ", hour, min);
+                printf("red headquarter was taken\n");
+            }
+        }
+    }
+    return r_end || b_end;
+}
+
+void GameEngine::cities_generate() {
+    for (int i = 1; i <= N; i ++) {
+        cities[i].life += 10;
+    }
+}
+
+void GameEngine::warriors_take() {
+    for (int i = 0; i <= N + 1; i ++) {
+        if (cities[i].red_warrior != nullptr && cities[i].blue_warrior == nullptr) {
+            red.totallife += cities[i].life;
+            cities[i].life = 0;
+        }
+        else if (cities[i].red_warrior == nullptr && cities[i].blue_warrior != nullptr) {
+            blue.totallife += cities[i].life;
+            cities[i].life = 0;
+        }
+    }
+}
+
+void GameEngine::use_arrow() {
+    for (int i = 0; i <= N + 1; i ++) {
+        warrior* r = cities[i].red_warrior;
+        warrior* b = cities[i].blue_warrior;
+        if (r != nullptr && i + 1 < N + 1 && cities[i + 1].blue_warrior != nullptr && !r->weapons.empty()) {
+            for (auto& weapon: r->weapons) {
+                if (weapon->type == WeaponType::arrow) {
+                    weapon->attack(r, cities[i + 1].blue_warrior);
+                    printf("%03d:%02d red %s %d shot", hour, min, r->config.name.c_str(), r->config.mark);
+                    if (cities[i + 1].blue_warrior->config.alive == false) {
+                        printf("and killed blue %s %d", cities[i + 1].blue_warrior->config.name, cities[i + 1].blue_warrior->config.mark);
+                    }
+                    printf("\n");
+                }
+            }
+        }
+        if (b != nullptr && i - 1 > 0 && cities[i - 1].red_warrior != nullptr && !b->weapons.empty()) {
+            for (auto& weapon: b->weapons) {
+                if (weapon->type == WeaponType::arrow) {
+                    weapon->attack(b, cities[i - 1].red_warrior);
+                }
+                printf("%03d:%02d blue %s %d shot", hour, min, b->config.name.c_str(), b->config.mark);
+                if (cities[i - 1].red_warrior->config.alive == false) {
+                    printf("and killed red %s %d", cities[i - 1].red_warrior->config.name, cities[i + 1].red_warrior->config.mark);
+                }
+                printf("\n");
+            }
+        }
+    }
+}
+
+void GameEngine::use_bomb() {
+    for (int i = 0; i <= N + 1; i ++) {
+        warrior* r = cities[i].red_warrior;
+        warrior* b = cities[i].blue_warrior;
+        if (r == nullptr || b == nullptr) {continue;}
+        bool f = false;
+        if (r != nullptr && !r->weapons.empty()) {
+            for (auto& weapon: r->weapons) {
+            if (weapon->type == WeaponType::bomb) {
+                for (auto& w: b->weapons) {
+                    if (w->type == WeaponType::sword) {
+                        if (cities[i].beg_war() == "blue" && b->config.damage + w->config.damage >= r->config.life) {
+                            weapon->attack(r, b);
+                            printf("%03d:%02d red %s %d used a bomb and killed blue %s %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark);
+                            f = true;
+                            break;
+                        }
+                        else if (cities[i].beg_war() == "red" && b->config.damage / 2 + w->config.damage >= r->config.life) {
+                            weapon->attack(r, b);
+                            printf("%03d:%02d red %s %d used a bomb and killed blue %s %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark);
+                            f = true;
+                            break;
+                        }
+                    }
+                }
                 break;
             }
-            r_index = (r_index + 1) % (red_warrior->weapons.size());
         }
-        for (int i = 0; i < blue_warrior->weapons.size(); i ++) {
-            if (blue_warrior->weapons[b_index] != nullptr && blue_warrior->weapons[b_index]->is_use()) {
-                b_w = blue_warrior->weapons[b_index];
-                b_index = (b_index + 1) % blue_warrior->weapons.size();
+        }
+        if (b != nullptr && !b->weapons.empty()) {
+            for (auto& weapon: b->weapons) {
+            if (weapon->type == WeaponType::bomb) {
+                for (auto& w: r->weapons) {
+                    if (w->type == WeaponType::sword) {
+                        if (cities[i].beg_war() == "blue" && r->config.damage + w->config.damage >= b->config.life) {
+                            weapon->attack(b, r);
+                            printf("%03d:%02d blue %s %d used a bomb and killed red %s %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark);
+                            f = true;
+                            break;
+                        }
+                        else if (cities[i].beg_war() == "red" && r->config.damage / 2 + w->config.damage >= b->config.life) {
+                            weapon->attack(b, r);
+                            printf("%03d:%02d blue %s %d used a bomb and killed red %s %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark);
+                            f = true;
+                            break;
+                        }
+                    }
+                }
                 break;
             }
-            b_index = (b_index + 1) % blue_warrior->weapons.size();
         }
-        if (r_w == nullptr && b_w == nullptr) break;
-        if(location % 2 != 0) {
-            if (r_w != nullptr) {
-                red_warrior->fire(blue_warrior, r_w);
-                red_life = red_warrior->get_life();
-                blue_life = blue_warrior->get_life();
-                if (red_life <=0 || blue_life <=0) continue;
-            }
-            if (b_w != nullptr) {blue_warrior->fire(red_warrior, b_w);}
         }
+        if (f) {
+            cities[i].red_warrior = nullptr;
+            cities[i].blue_warrior = nullptr;
+        } 
+    }
+}
+
+void GameEngine::after_win(warrior* winner, warrior* loser, bool beg, int i) {
+    winner->win(loser);
+    loser->lose();
+    if (winner->type == WarriorType::dragon && beg && winner->courage > 0.8) {
+        printf("%03d:%02d %s dragon %d yelled in city %d\n", hour, min, winner->config.belong->name.c_str(), winner->config.mark, i);
+    }
+    printf("%03d:%02d %s %s %d earned %d elements for his headquarter\n", hour, min, winner->config.belong->name.c_str(), winner->config.name.c_str(), winner->config.mark, cities[i].life);
+    int tmp = (winner->config.belong->name == "red"? 1:-1);
+    if (cities[i].win_log == tmp && cities[i].flag != tmp) {
+        cities[i].flag = tmp;
+        printf("%03d:%02d %s flag raised in city %d\n", hour, min, tmp == 1?"red":"blue", i);
+    }
+    else {cities[i].win_log = tmp;}
+}
+
+void GameEngine::war() {
+    for (int i = 1; i <= N; i ++) {
+        warrior* r = cities[i].red_warrior;
+        warrior* b = cities[i].blue_warrior;
+        if (r == nullptr || b == nullptr) {continue;}
         else {
-            if (b_w != nullptr) {
-                blue_warrior->fire(red_warrior, b_w);
-                red_life = red_warrior->get_life();
-                blue_life = blue_warrior->get_life();
-                if (red_life <=0 || blue_life <= 0) continue;
+            string beg = cities[i].beg_war();
+            if (r->config.alive == false) {
+                after_win(b, r, (beg == "blue"), i);
+                continue;
             }
-            if (r_w != nullptr) {red_warrior->fire(blue_warrior, r_w);}
+            if (b->config.alive == false) {
+                after_win(r, b, (beg == "red"), i);
+                continue;
+            }
+            if (beg == "red") {
+                if (!r->weapons.empty()) {
+                    for (auto& w:r->weapons) {
+                        if (w->type == WeaponType::sword) {
+                            printf("%03d:%02d red %s %d attacked blue %s %d in city %d with %d elements and force %d", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i, r->config.life, r->config.damage);
+                            r->fire(b, w.get());
+                            break;
+                        }
+                    }
+                }
+                if (b->config.alive == false) {
+                    printf("%03d:%02d blue %s was killed in city %d", hour, min, b->config.name.c_str(), i);
+                    after_win(r, b, true, i);
+                }
+                else {
+                    if (! b->weapons.empty()) {
+                        for (auto& w:b->weapons) {
+                            if (w->type == WeaponType::sword) {
+                                printf("%03d:%02d blue %s %d fought back against red %s %d in city %d", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i);
+                                b->feedback(r, w.get());
+                            }
+                        }
+                        if (r->config.alive == false) {
+                            printf("%03d:%02d red %s was killed in city %d", hour, min, r->config.name.c_str(), i);
+                            after_win(b, r, false, i);
+                        }
+                        else {
+                            r->lose();b->lose();
+                            cities[i].win_log = 0;
+                        }
+                    }
+                }
+            }
+            else if (beg == "blue") {
+                if (!b->weapons.empty()) {
+                    for (auto& w:b->weapons) {
+                        if (w->type == WeaponType::sword) {
+                            printf("%03d:%02d blue %s %d attacked red %s %d in city %d with %d elements and force %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i, b->config.life, b->config.damage);
+                            b->fire(r, w.get());
+                            break;
+                        }
+                    }
+                }
+                if (r->config.alive == false) {
+                    printf("%03d:%02d red %s was killed in city %d\n", hour, min, r->config.name.c_str(), i);
+                    after_win(b, r, true, i);
+                }
+                else {
+                    if (! r->weapons.empty()) {
+                        for (auto& w:r->weapons) {
+                            if (w->type == WeaponType::sword) {
+                                printf("%03d:%02d red %s %d fought back against blue %s %d in city %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i);
+                                r->feedback(b, w.get());
+                            }
+                        }
+                        if (b->config.alive == false) {
+                            printf("%03d:%02d blue %s was killed in city %d\n", hour, min, b->config.name.c_str(), i);
+                            after_win(r, b, false, i);
+                        }
+                        else {
+                            r->lose();b->lose();
+                            cities[i].win_log = 0;
+                        }
+                    }
+                }
+            }
         }
-        red_life = red_warrior->get_life();
-        blue_life = blue_warrior->get_life();
     }
-    if (flag == 1) {
-        printf("%03d:%02d red %s %d killed blue %s %d in city %d remaining %d elements\n", hour, min, red_warrior->get_warrior_name().c_str(), red_warrior->mark, blue_warrior->get_warrior_name().c_str(), blue_warrior->mark, location, red_life);
-        red_warrior->set_weapons2();
-        blue_warrior->set_weapons2();
-        for (int i = 0; i < blue_warrior->weapons.size() && red_warrior->weapons.size() < 10; i++) {
-            weapon* w = blue_warrior->weapons[i];
-            if (w == nullptr) {break;}
-            red_warrior->weapons.push_back(w);
-            blue_warrior->weapons[i] = nullptr;
+    int r_life = 0;
+    int b_life = 0;
+    for (int i = 1;i <= N; i ++) {
+        warrior* r = cities[i].red_warrior;
+        if (r != nullptr && r->config.alive == false) {
+            cities[i].red_warrior = nullptr;
+            continue;
         }
-        blue_warrior->alive = false;
-        blue_warrior = nullptr;
-    }
-    else if (flag == -1) {
-        printf("%03d:%02d blue %s %d killed red %s %d in city %d remaining %d elements\n", hour, min, blue_warrior->get_warrior_name().c_str(), blue_warrior->mark, red_warrior->get_warrior_name().c_str(), red_warrior->mark, location, blue_life);
-        red_warrior->set_weapons2();
-        blue_warrior->set_weapons2();
-        for (int i = 0; i < red_warrior->weapons.size() && blue_warrior->weapons.size() < 10; i++) {
-            weapon* w = red_warrior->weapons[i];
-            if (w == nullptr) {break;}
-            blue_warrior->weapons.push_back(w);
-            red_warrior->weapons[i] = nullptr;
+        if (r != nullptr && r->config.win) {
+            r_life += cities[i].life;
+            cities[i].life = 0;
+            if (red.totallife >= 8) {
+                r->config.life += 8;
+                red.totallife -= 8;
+            }
         }
-        red_warrior->alive = false;
-        red_warrior = nullptr;
     }
-    else if (flag == -2) {
-        printf("%03d:%02d both red %s %d and blue %s %d died in city %d\n", hour, min, red_warrior->get_warrior_name().c_str(), red_warrior->mark, blue_warrior->get_warrior_name().c_str(), blue_warrior->mark, location);
-        red_warrior->alive = false;blue_warrior->alive = false;
-        red_warrior = nullptr;blue_warrior = nullptr;
+    red.totallife += r_life;
+    for (int i = N; i >= 1; i --) {
+        warrior* b = cities[i].blue_warrior;
+        if (b != nullptr && b->config.alive == false) {
+            cities[i].blue_warrior = nullptr;
+            continue;
+        }
+        if (b != nullptr && b->config.win) {
+            b_life += cities[i].life;
+            cities[i].life = 0;
+            if (blue.totallife >= 8) {
+                b->config.life += 8;
+                blue.totallife -= 8;
+            }
+        }
     }
-    else if (flag == 0) {
-        printf("%03d:%02d both red %s %d and blue %s %d were alive in city %d\n", hour, min, red_warrior->get_warrior_name().c_str(), red_warrior->mark, blue_warrior->get_warrior_name().c_str(), blue_warrior->mark, location);
-        red_warrior->set_weapons1();
-        blue_warrior->set_weapons1();
-    }
-    if (red_warrior != nullptr && red_warrior->get_warrior_name() == "dragon"){
-        printf("%03d:%02d red dragon %d yelled in city %d\n", hour, min, red_warrior->mark, location);
-    }
-    if (blue_warrior != nullptr && blue_warrior->get_warrior_name() == "dragon"){
-        printf("%03d:%02d blue dragon %d yelled in city %d\n", hour, min, blue_warrior->mark, location);
+    blue.totallife += b_life;
+}
+
+void GameEngine::headquarters_report() {
+    printf("%03d:%02d %d elements in red headquarter\n", hour, min, red.totallife);
+    printf("%03d:%02d %d elements in blue headquarter\n", hour, min, blue.totallife);
+}
+
+void GameEngine::warriors_report() {
+    for (int i = 0; i <= N + 1; i++) {
+        if (cities[i].red_warrior != nullptr) {
+            cities[i].red_warrior->report(hour, min);
+        }
+        if (cities[i].blue_warrior != nullptr) {
+            cities[i].blue_warrior->report(hour, min);
+        }
     }
 }
 
@@ -567,149 +814,26 @@ int main() {
     for (int c = 1 ;c <= t; c++) {
         printf("Case %d:\n", c);
         red.reset();blue.reset();cities.clear();
-        int M, K, T;
-        cin >> M >> N >> K >> T;
+        int M, T;
+        cin >> M >> N >> R >> K >> T;
         cities.push_back(city(0));
-        for (int j = 1;j <= N; j++) {
+        for (int j = 1; j <= N; j++) {
             cities.push_back(city(j));
         }
         cities.push_back(city(N + 1));
-        red.set_totallife(M);red.location = 0;
-        blue.set_totallife(M);blue.location = N + 1;
+        red.totallife = M; blue.totallife = M;
+        red.location = 0;blue.location = N + 1;
         for (int i = 0, l; i < 5; i++) {
             cin >> l;
-            switch(i) {
-                case 0:dra->set_life(l);break;
-                case 1:nin->set_life(l);break;
-                case 2:ice->set_life(l);break;
-                case 3:lio->set_life(l);break;
-                case 4:wol->set_life(l);break;
-            }
+            configs[i].life = l;
         };
         for (int i = 0, d; i < 5; i++) {
             cin >> d;
-            switch(i) {
-                case 0:dra->set_damage(d);break;
-                case 1:nin->set_damage(d);break;
-                case 2:ice->set_damage(d);break;
-                case 3:lio->set_damage(d);break;
-                case 4:wol->set_damage(d);break;
-            }
+            configs[i].damage = d;
         };
-        bool end = false;
-        bool mark_red = true;
-        bool mark_blue = true;
-        for (int tim = 0, hour, min; tim <= T && !end; tim ++) {
-            hour = tim / 60;min = tim % 60;
-            if (min == 0 || min == 5 || min == 10 || min == 35 || min == 40 || min == 50 || min ==55) {
-                if (min == 0) {
-                    if (mark_red) mark_red = red.produce(hour, min);
-                    if (mark_blue) mark_blue = blue.produce(hour, min);
-                }
-                else if (min == 5) {
-                    for (int i = 0 ; i <= N + 1; i++) {
-                        if (cities[i].red_warrior != nullptr && i <= N && cities[i].red_warrior->get_warrior_name() == "lion") {
-                            if (cities[i].red_warrior->get_loyalty() <= 0) {
-                                cities[i].red_warrior->alive = false;
-                                printf("%03d:%02d ", hour, min);
-                                printf("red lion %d ran away\n", cities[i].red_warrior->mark);
-                                cities[i].red_warrior = nullptr;
-                            }
-                        }
-                        if (cities[i].blue_warrior != nullptr && i >= 1 && cities[i].blue_warrior->get_warrior_name() == "lion") {
-                            if (cities[i].blue_warrior-> get_loyalty() <= 0) {
-                                cities[i].blue_warrior->alive = false;
-                                printf("%03d:%02d ", hour, min);
-                                printf("blue lion %d ran away\n", cities[i].blue_warrior->mark);
-                                cities[i].blue_warrior = nullptr;
-                            }
-                        }
-                    }
-                }
-                else if (min == 10) {
-                    for (int i = N ; i >= 0; i --) {
-                        if (cities[i].red_warrior != nullptr) {
-                            cities[i].red_warrior->move(K);
-                        }
-                    }
-                    for (int i = 1; i <= N + 1; i ++) {
-                        if (cities[i].blue_warrior != nullptr) {
-                            cities[i].blue_warrior->move(K);
-                        }
-                    }
-                    for (int i = 0; i <= N + 1; i++) {
-                        warrior* r = cities[i].red_warrior;
-                        warrior* b = cities[i].blue_warrior;
-                        if (r != nullptr) {
-                            if (i == N + 1) {
-                                printf("%03d:%02d ", hour, min);
-                                printf("%s %s %d reached blue headquarter with %d elements and force %d\n", "red", r->get_warrior_name().c_str(), r->mark, r->get_life(), r->get_damage());
-                                printf("%03d:%02d ", hour, min);
-                                printf("blue headquarter was taken\n");
-                                end = true;
-                            }
-                            else {
-                                printf("%03d:%02d ", hour, min);
-                                printf("%s %s %d marched to city %d with %d elements and force %d\n", "red", r->get_warrior_name().c_str(), r->mark, r->get_location(), r->get_life(), r->get_damage());
-                            }
-                        }
-                        if (b != nullptr) {
-                            if (i == 0) {
-                                printf("%03d:%02d ", hour, min);
-                                printf("%s %s %d reached red headquarter with %d elements and force %d\n", "blue", b->get_warrior_name().c_str(), b->mark, b->get_life(), b->get_damage());
-                                printf("%03d:%02d ", hour, min);
-                                printf("red headquarter was taken\n");
-                                end = true;
-                            }
-                            else {
-                                printf("%03d:%02d ", hour, min);
-                                printf("%s %s %d marched to city %d with %d elements and force %d\n", "blue", b->get_warrior_name().c_str(), b->mark, b->get_location(), b->get_life(), b->get_damage());
-                            }
-                        }
-                    }
-                    if (end) {break;}
-                }
-                else if (min == 35) {
-                    for (int i = 1; i <= N; i++) {
-                        if (cities[i].red_warrior != nullptr && cities[i].blue_warrior != nullptr) {
-                            cities[i].red_warrior->set_weapons2();
-                            cities[i].blue_warrior->set_weapons2();
-                            if (cities[i].red_warrior -> get_warrior_name() == "wolf") {
-                                cities[i].red_warrior->rob(hour, min, cities[i].blue_warrior);
-                            }
-                            else if (cities[i].blue_warrior -> get_warrior_name() == "wolf") {
-                                cities[i].blue_warrior->rob(hour, min, cities[i].red_warrior);
-                            }
-                        }
-                    }
-                }
-                else if (min == 40) {
-                    for (int i = 1; i <= N; i++) {
-                        if (cities[i].red_warrior != nullptr && cities[i].blue_warrior != nullptr) {
-                            cities[i].red_warrior->set_weapons1();
-                            cities[i].blue_warrior->set_weapons1();
-                            cities[i].war(hour, min);
-                        }
-                    }
-                }
-                else if (min == 50) {
-                    printf("%03d:%02d %d elements in %s headquarter\n", hour, min, red.get_totallife(), red.get_name().c_str());
-                    printf("%03d:%02d %d elements in %s headquarter\n", hour, min, blue.get_totallife(), blue.get_name().c_str());
-                }
-                else if (min == 55) {
-                    for (int i = 0; i <= N + 1; i++) {
-                        if (cities[i].red_warrior != nullptr) {
-                            cities[i].red_warrior->report(hour, min);
-                        }
-                        if (cities[i].blue_warrior != nullptr) {
-                            cities[i].blue_warrior->report(hour, min);
-                        }
-                    }
-                }
-            }
-        }
+        GameEngine engine;
+        engine.loop(T);
     }
-    blue.reset();red.reset();
-    delete ice;delete lio;delete wol;delete nin;delete dra;
+    getchar();
     return 0;
 }
