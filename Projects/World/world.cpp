@@ -96,6 +96,7 @@ struct WarriorConfig {
     headquarter* belong;
     bool alive;
     bool win;
+    int life_pre;
 };
 
 const char* WarriorNames[5] = {"dragon", "ninja", "iceman", "lion", "wolf"};
@@ -133,7 +134,9 @@ class warrior {
             }
         }
         virtual void fire(warrior* opponent, weapon* w) {
-            w->attack(this, opponent);
+            if (w != nullptr) {
+                w->attack(this, opponent);
+            }
             opponent->hurt(config.damage);
         }
         virtual void feedback(warrior* opponent, weapon* w) {
@@ -199,10 +202,13 @@ class warrior {
             printf("\n");
         }
         void set_weapons() {
-            for (auto it = weapons.begin(); it != weapons.end(); it ++) {
+            for (auto it = weapons.begin(); it != weapons.end();) {
                 if (!(*it)->is_useful()) {
                     (*it).reset();
                     it = weapons.erase(it);
+                }
+                else {
+                    ++it;
                 }
             }
         }
@@ -353,7 +359,16 @@ class wolf: public warrior {
     public:
         using warrior::warrior;
         void win(warrior* opponent) {
+            bool sw{false}, arr{false}, bom{false};
+            for (const auto& w: weapons) {
+                if (w->type == WeaponType::arrow) {arr = true;}
+                if (w->type == WeaponType::bomb) {bom = true;}
+                if (w->type == WeaponType::sword) {sw = true;}
+            }
             while(!opponent->weapons.empty()) {
+                if (opponent->weapons.back()->type == WeaponType::arrow && arr) {opponent->weapons.pop_back();continue;}
+                if (opponent->weapons.back()->type == WeaponType::bomb && bom) {opponent->weapons.pop_back();continue;}
+                if (opponent->weapons.back()->type == WeaponType::sword && sw) {opponent->weapons.pop_back();continue;}
                 weapons.push_back(std::move(opponent->weapons.back()));
                 opponent->weapons.pop_back();
             }
@@ -485,7 +500,7 @@ void GameEngine::lion_runaway() {
         if (r != nullptr && r->type == WarriorType::lion) {
             if (r->loyalty <= 0 && i != N + 1) {
                 cities[i].red_warrior = nullptr;
-                printf("%03d:%02d red lion %d ran away", hour, min, r->config.mark);
+                printf("%03d:%02d red lion %d ran away\n", hour, min, r->config.mark);
                 r->config.alive = false;
                 r = nullptr;
             }
@@ -493,7 +508,7 @@ void GameEngine::lion_runaway() {
         else if (b != nullptr && b->type == WarriorType::lion) {
             if (b->loyalty <= 0 && i != 0) {
                 cities[i].blue_warrior = nullptr;
-                printf("%03d:%02d blue lion %d ran away", hour, min, b->config.mark);
+                printf("%03d:%02d blue lion %d ran away\n", hour, min, b->config.mark);
                 b->config.alive = false;
                 b = nullptr;
             }
@@ -572,6 +587,8 @@ void GameEngine::use_arrow() {
     for (int i = 0; i <= N + 1; i ++) {
         warrior* r = cities[i].red_warrior;
         warrior* b = cities[i].blue_warrior;
+        if (r != nullptr) {r->config.life_pre = r->config.life;}
+        if (b != nullptr) {b->config.life_pre = b->config.life;}
         if (r != nullptr && i + 1 < N + 1 && cities[i + 1].blue_warrior != nullptr && !r->weapons.empty()) {
             for (auto& weapon: r->weapons) {
                 if (weapon->type == WeaponType::arrow) {
@@ -663,6 +680,9 @@ void GameEngine::after_win(warrior* winner, warrior* loser, bool beg, int i) {
     loser->lose();
     if (winner->type == WarriorType::dragon && beg && winner->courage > 0.8) {
         printf("%03d:%02d %s dragon %d yelled in city %d\n", hour, min, winner->config.belong->name.c_str(), winner->config.mark, i);
+    }
+    if (loser->type == WarriorType::lion) {
+        winner->config.life += loser->config.life_pre;
     }
     printf("%03d:%02d %s %s %d earned %d elements for his headquarter\n", hour, min, winner->config.belong->name.c_str(), winner->config.name.c_str(), winner->config.mark, cities[i].life);
     int tmp = (winner->config.belong->name == "red"? 1:-1);
