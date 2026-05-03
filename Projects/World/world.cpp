@@ -279,9 +279,11 @@ class dragon: public warrior {
             courage = b->totallife / config.life;
         }
         void win(warrior* opponent) {
+            config.win = true;
             courage += 0.2;
         }
         void lose() {
+            config.win = false;
             courage -= 0.2;
         }
 };
@@ -361,6 +363,7 @@ class wolf: public warrior {
     public:
         using warrior::warrior;
         void win(warrior* opponent) {
+            config.win = true;
             bool sw{false}, arr{false}, bom{false};
             for (const auto& w: weapons) {
                 if (w->type == WeaponType::arrow) {arr = true;}
@@ -379,6 +382,7 @@ class wolf: public warrior {
 
 void headquarter::reset(){
     warriors.clear();
+    loopcount = 0;
 };
 
 int headquarter::get_op_location() {return (N + 1 - location);}
@@ -544,7 +548,7 @@ bool GameEngine::warriors_move() {
             else {
                 printf("red %s %d marched to city %d with %d elements and force %d\n", r->config.name.c_str(), r->config.mark, r->config.location, r->config.life, r->config.damage);
             }
-            if (r_end){
+            if (r_end && i == N + 1){
                 printf("%03d:%02d ", hour, min);
                 printf("blue headquarter was taken\n");
             }
@@ -557,7 +561,7 @@ bool GameEngine::warriors_move() {
             else {
                  printf("blue %s %d marched to city %d with %d elements and force %d\n", b->config.name.c_str(), b->config.mark, b->config.location, b->config.life, b->config.damage);
             }   
-            if (b_end) {
+            if (b_end && i == 0) {
                 printf("%03d:%02d ", hour, min);
                 printf("red headquarter was taken\n");
             }
@@ -577,12 +581,12 @@ void GameEngine::warriors_take() {
         if (cities[i].life == 0) {continue;}
         if (cities[i].red_warrior != nullptr && cities[i].blue_warrior == nullptr) {
             red.totallife += cities[i].life;
-            printf("%03d:%02d red %s %d earned %d elements for his headquarter\n", hour, min, cities[i].red_warrior->config.name.c_str(), cities[i].red_warrior->config.mark, cities[i].life);
+            // printf("%03d:%02d red %s %d earned %d elements for his headquarter\n", hour, min, cities[i].red_warrior->config.name.c_str(), cities[i].red_warrior->config.mark, cities[i].life);
             cities[i].life = 0;
         }
         else if (cities[i].red_warrior == nullptr && cities[i].blue_warrior != nullptr) {
             blue.totallife += cities[i].life;
-            printf("%03d:%02d blue %s %d earned %d elements for his headquarter\n", hour, min, cities[i].blue_warrior->config.name.c_str(), cities[i].blue_warrior->config.mark, cities[i].life);
+            // printf("%03d:%02d blue %s %d earned %d elements for his headquarter\n", hour, min, cities[i].blue_warrior->config.name.c_str(), cities[i].blue_warrior->config.mark, cities[i].life);
             cities[i].life = 0;
         }
     }
@@ -608,12 +612,12 @@ void GameEngine::use_arrow() {
             for (auto& weapon: b->weapons) {
                 if (weapon->type == WeaponType::arrow) {
                     weapon->attack(b, cities[i - 1].red_warrior);
+                    printf("%03d:%02d blue %s %d shot", hour, min, b->config.name.c_str(), b->config.mark);
+                    if (cities[i - 1].red_warrior->config.alive == false) {
+                        printf("and killed red %s %d", cities[i - 1].red_warrior->config.name.c_str(), cities[i - 1].red_warrior->config.mark);
+                    }
+                    printf("\n");
                 }
-                printf("%03d:%02d blue %s %d shot", hour, min, b->config.name.c_str(), b->config.mark);
-                if (cities[i - 1].red_warrior->config.alive == false) {
-                    printf("and killed red %s %d", cities[i - 1].red_warrior->config.name.c_str(), cities[i - 1].red_warrior->config.mark);
-                }
-                printf("\n");
             }
         }
     }
