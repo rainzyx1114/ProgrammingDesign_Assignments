@@ -615,25 +615,45 @@ void GameEngine::use_arrow() {
 }
 
 void GameEngine::use_bomb() {
+    auto sword_damage = [](warrior* w) {
+        int d = 0;
+        for (auto& wp : w->weapons) {
+            if (wp->type == WeaponType::sword) { d = wp->config.damage; break; }
+        }
+        return d;
+    };
     for (int i = 0; i <= N + 1; i ++) {
         warrior* r = cities[i].red_warrior;
         warrior* b = cities[i].blue_warrior;
         if (r == nullptr || b == nullptr) {continue;}
         bool f = false;
+        int r_sword = sword_damage(r);
+        int b_sword = sword_damage(b);
+        bool red_first = (cities[i].beg_war() == "red");
+
+        int dmg_r_to_b = r->config.damage + r_sword;
+        int dmg_b_to_r = b->config.damage + b_sword;
+        int fb_r_to_b = (r->type == WarriorType::ninja ? 0 : r->config.damage / 2 + r_sword);
+        int fb_b_to_r = (b->type == WarriorType::ninja ? 0 : b->config.damage / 2 + b_sword);
+
+        bool red_will_die = false;
+        bool blue_will_die = false;
+        if (red_first) {
+            if (b->config.life > dmg_r_to_b) {
+                red_will_die = (r->config.life <= fb_b_to_r);
+            }
+            blue_will_die = (b->config.life <= dmg_r_to_b);
+        } else {
+            if (r->config.life > dmg_b_to_r) {
+                blue_will_die = (b->config.life <= fb_r_to_b);
+            }
+            red_will_die = (r->config.life <= dmg_b_to_r);
+        }
+
         if (r != nullptr && !r->weapons.empty()) {
             for (auto& weapon: r->weapons) {
             if (weapon->type == WeaponType::bomb) {
-                int b_sword = 0;
-                for (auto& w: b->weapons) {
-                    if (w->type == WeaponType::sword) {b_sword = w->config.damage; break;}
-                }
-                if (cities[i].beg_war() == "blue" && b->config.damage + b_sword >= r->config.life) {
-                    weapon->attack(r, b);
-                    printf("%03d:%02d red %s %d used a bomb and killed blue %s %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark);
-                    f = true;
-                    break;
-                }
-                else if (cities[i].beg_war() == "red" && b->config.damage / 2 + b_sword >= r->config.life) {
+                if (red_will_die && !blue_will_die) {
                     weapon->attack(r, b);
                     printf("%03d:%02d red %s %d used a bomb and killed blue %s %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark);
                     f = true;
@@ -646,17 +666,7 @@ void GameEngine::use_bomb() {
         if (b != nullptr && !b->weapons.empty()) {
             for (auto& weapon: b->weapons) {
             if (weapon->type == WeaponType::bomb) {
-                int r_sword = 0;
-                for (auto& w: r->weapons) {
-                    if (w->type == WeaponType::sword) {r_sword = w->config.damage; break;}
-                }
-                if (cities[i].beg_war() == "blue" && r->config.damage + r_sword >= b->config.life) {
-                    weapon->attack(b, r);
-                    printf("%03d:%02d blue %s %d used a bomb and killed red %s %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark);
-                    f = true;
-                    break;
-                }
-                else if (cities[i].beg_war() == "red" && r->config.damage / 2 + r_sword >= b->config.life) {
+                if (blue_will_die && !red_will_die) {
                     weapon->attack(b, r);
                     printf("%03d:%02d blue %s %d used a bomb and killed red %s %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark);
                     f = true;
@@ -760,8 +770,8 @@ void GameEngine::war() {
             }
         }
     }
-    int r_life = 0;
-    int b_life = 0;
+    vector<int> red_win_city;
+    vector<int> blue_win_city;
     for (int i = 1;i <= N; i ++) {
         warrior* r = cities[i].red_warrior;
         if (r != nullptr && r->config.alive == false) {
@@ -769,15 +779,9 @@ void GameEngine::war() {
             continue;
         }
         if (r != nullptr && r->config.win) {
-            r_life += cities[i].life;
-            cities[i].life = 0;
-            if (red.totallife >= 8) {
-                r->config.life += 8;
-                red.totallife -= 8;
-            }
+            red_win_city.push_back(i);
         }
     }
-    red.totallife += r_life;
     for (int i = N; i >= 1; i --) {
         warrior* b = cities[i].blue_warrior;
         if (b != nullptr && b->config.alive == false) {
@@ -785,14 +789,27 @@ void GameEngine::war() {
             continue;
         }
         if (b != nullptr && b->config.win) {
-            b_life += cities[i].life;
-            cities[i].life = 0;
-            if (blue.totallife >= 8) {
-                b->config.life += 8;
-                blue.totallife -= 8;
-            }
+            blue_win_city.push_back(i);
         }
     }
+    for (int i = N; i >= 1; --i) {
+        warrior* r = cities[i].red_warrior;
+        if (r != nullptr && r->config.win && red.totallife >= 8) {
+            r->config.life += 8;
+            red.totallife -= 8;
+        }
+    }
+    for (int i = 1; i <= N; ++i) {
+        warrior* b = cities[i].blue_warrior;
+        if (b != nullptr && b->config.win && blue.totallife >= 8) {
+            b->config.life += 8;
+            blue.totallife -= 8;
+        }
+    }
+    int r_life = 0, b_life = 0;
+    for (int i: red_win_city) { r_life += cities[i].life; cities[i].life = 0; }
+    for (int i: blue_win_city) { b_life += cities[i].life; cities[i].life = 0; }
+    red.totallife += r_life;
     blue.totallife += b_life;
 }
 
