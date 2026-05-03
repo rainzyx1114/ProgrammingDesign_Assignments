@@ -35,10 +35,10 @@ class headquarter {
         int totallife{0};
         int location;
         headquarter(const char* n):name(n) {
-            if (n == "red") {
+            if (name == "red") {
                 loop[0] = WarriorType::iceman;loop[1] = WarriorType::lion;loop[2] = WarriorType::wolf;loop[3] = WarriorType::ninja;loop[4] = WarriorType::dragon;
             }
-            else if (n == "blue") {
+            else if (name == "blue") {
                 loop[0] = WarriorType::lion;loop[1] = WarriorType::dragon;loop[2] = WarriorType::ninja;loop[3] = WarriorType::iceman;loop[4] = WarriorType::wolf;
             }
         }
@@ -202,7 +202,7 @@ class warrior {
             for (auto it = weapons.begin(); it != weapons.end(); it ++) {
                 if (!(*it)->is_useful()) {
                     (*it).reset();
-                    weapons.erase(it);
+                    it = weapons.erase(it);
                 }
             }
         }
@@ -251,7 +251,7 @@ class arrow:public weapon {
             opponent->hurt(config.damage);
             config.use_times ++;
         }
-        bool is_useful() {return config.use_times <= 3;}
+        bool is_useful() {return config.use_times < 3;}
 };
 class dragon: public warrior {
     public:
@@ -493,7 +493,7 @@ void GameEngine::lion_runaway() {
         else if (b != nullptr && b->type == WarriorType::lion) {
             if (b->loyalty <= 0 && i != 0) {
                 cities[i].blue_warrior = nullptr;
-                printf("%03d:%02d blue lion %d ran away", hour, min, r->config.mark);
+                printf("%03d:%02d blue lion %d ran away", hour, min, b->config.mark);
                 b->config.alive = false;
                 b = nullptr;
             }
@@ -578,7 +578,7 @@ void GameEngine::use_arrow() {
                     weapon->attack(r, cities[i + 1].blue_warrior);
                     printf("%03d:%02d red %s %d shot", hour, min, r->config.name.c_str(), r->config.mark);
                     if (cities[i + 1].blue_warrior->config.alive == false) {
-                        printf("and killed blue %s %d", cities[i + 1].blue_warrior->config.name, cities[i + 1].blue_warrior->config.mark);
+                        printf("and killed blue %s %d", cities[i + 1].blue_warrior->config.name.c_str(), cities[i + 1].blue_warrior->config.mark);
                     }
                     printf("\n");
                 }
@@ -591,7 +591,7 @@ void GameEngine::use_arrow() {
                 }
                 printf("%03d:%02d blue %s %d shot", hour, min, b->config.name.c_str(), b->config.mark);
                 if (cities[i - 1].red_warrior->config.alive == false) {
-                    printf("and killed red %s %d", cities[i - 1].red_warrior->config.name, cities[i + 1].red_warrior->config.mark);
+                    printf("and killed red %s %d", cities[i - 1].red_warrior->config.name.c_str(), cities[i - 1].red_warrior->config.mark);
                 }
                 printf("\n");
             }
@@ -692,26 +692,26 @@ void GameEngine::war() {
                 if (!r->weapons.empty()) {
                     for (auto& w:r->weapons) {
                         if (w->type == WeaponType::sword) {
-                            printf("%03d:%02d red %s %d attacked blue %s %d in city %d with %d elements and force %d", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i, r->config.life, r->config.damage);
+                            printf("%03d:%02d red %s %d attacked blue %s %d in city %d with %d elements and force %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i, r->config.life, r->config.damage);
                             r->fire(b, w.get());
                             break;
                         }
                     }
                 }
                 if (b->config.alive == false) {
-                    printf("%03d:%02d blue %s was killed in city %d", hour, min, b->config.name.c_str(), i);
+                    printf("%03d:%02d blue %s was killed in city %d\n", hour, min, b->config.name.c_str(), i);
                     after_win(r, b, true, i);
                 }
                 else {
                     if (! b->weapons.empty()) {
                         for (auto& w:b->weapons) {
                             if (w->type == WeaponType::sword) {
-                                printf("%03d:%02d blue %s %d fought back against red %s %d in city %d", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i);
+                                printf("%03d:%02d blue %s %d fought back against red %s %d in city %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i);
                                 b->feedback(r, w.get());
                             }
                         }
                         if (r->config.alive == false) {
-                            printf("%03d:%02d red %s was killed in city %d", hour, min, r->config.name.c_str(), i);
+                            printf("%03d:%02d red %s was killed in city %d\n", hour, min, r->config.name.c_str(), i);
                             after_win(b, r, false, i);
                         }
                         else {
