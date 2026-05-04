@@ -30,6 +30,7 @@ class headquarter {
     WarriorType loop[5];
     int loopcount{0};
     public:
+        int op_count{0};
         vector<unique_ptr<warrior>> warriors;
         string name;
         int totallife{0};
@@ -48,6 +49,8 @@ class headquarter {
         bool produce(int hour, int min);
 };
 
+headquarter red("red");
+headquarter blue("blue");
 class city {
         public:
             int flag{0}; // red->1, blue->-1
@@ -151,11 +154,13 @@ class warrior {
                     cities[config.location].red_warrior = nullptr;
                     config.location ++;
                     cities[config.location].red_warrior = this;
+                    blue.op_count ++;
                     return true;
                 } 
                 if (config.location == N + 1) return false;
                 cities[config.location].red_warrior = nullptr;
                 config.location ++;
+                if (config.location == N + 1) {blue.op_count ++;}
                 cities[config.location].red_warrior = this;
             }
             else if (config.belong->name == "blue") {
@@ -163,11 +168,13 @@ class warrior {
                     cities[config.location].blue_warrior = nullptr;
                     config.location --;
                     cities[config.location].blue_warrior = this;
+                    red.op_count ++;
                     return true;
                 }
                 if (config.location == 0) return false;
                 cities[config.location].blue_warrior = nullptr;
                 config.location --;
+                if (config.location == 0) {red.op_count ++;}
                 cities[config.location].blue_warrior = this;
             }
             return false;
@@ -241,8 +248,8 @@ class bomb:public weapon {
             type = WeaponType::bomb;
         }
         void attack(warrior* attacker, warrior* opponent) {
-            attacker->hurt(attacker->config.damage);
-            opponent->hurt(opponent->config.damage);
+            attacker->hurt(attacker->config.life);
+            opponent->hurt(opponent->config.life);
             config.use_times ++;
         }
         bool is_useful() {return config.use_times < 1;}
@@ -266,8 +273,12 @@ class dragon: public warrior {
         dragon(WarriorType t, headquarter* b, int m):warrior(t, b, m) {
             int tmp = m % 3;
             switch(tmp) {
-                case(0):
-                weapons.push_back(make_unique<sword>(*this));
+                case(0):{
+                    auto s = make_unique<sword>(*this);
+                    if (s->config.damage != 0) { 
+                        weapons.push_back(std::move(s));
+                    }
+                }
                 break;
                 case(1):
                 weapons.push_back(make_unique<bomb>(*this));
@@ -276,7 +287,7 @@ class dragon: public warrior {
                 weapons.push_back(make_unique<arrow>(*this));
                 break;
             }
-            courage = b->totallife / config.life;
+            courage = 1.0 * b->totallife / config.life;
         }
         void win(warrior* opponent) {
             config.win = true;
@@ -293,8 +304,12 @@ class ninja: public warrior {
             int tmp1 = m % 3;
             int tmp2 = (m + 1) % 3;
             switch(tmp1) {
-                case(0):
-                weapons.push_back(make_unique<sword>(*this));
+                case(0):{
+                    auto s = make_unique<sword>(*this);
+                    if (s->config.damage != 0) { 
+                        weapons.push_back(std::move(s));
+                    }
+                }
                 break;
                 case(1):
                 weapons.push_back(make_unique<bomb>(*this));
@@ -304,8 +319,12 @@ class ninja: public warrior {
                 break;
             }
             switch(tmp2) {
-                case(0):
-                weapons.push_back(make_unique<sword>(*this));
+                case(0):{
+                    auto s = make_unique<sword>(*this);
+                    if (s->config.damage != 0) { 
+                        weapons.push_back(std::move(s));
+                    }
+                }
                 break;
                 case(1):
                 weapons.push_back(make_unique<bomb>(*this));
@@ -325,8 +344,12 @@ class iceman: public warrior {
         iceman(WarriorType t, headquarter* b, int m):warrior(t, b, m) {
             int tmp = m % 3;
             switch(tmp) {
-                case(0):
-                weapons.push_back(make_unique<sword>(*this));
+                case(0):{
+                    auto s = make_unique<sword>(*this);
+                    if (s->config.damage != 0) { 
+                        weapons.push_back(std::move(s));
+                    }
+                }
                 break;
                 case(1):
                 weapons.push_back(make_unique<bomb>(*this));
@@ -364,18 +387,33 @@ class wolf: public warrior {
         using warrior::warrior;
         void win(warrior* opponent) {
             config.win = true;
-            bool sw{false}, arr{false}, bom{false};
+            set_weapons();
+            opponent->set_weapons();
+            bool has_sword = false, has_arrow = false, has_bomb = false;
             for (const auto& w: weapons) {
-                if (w->type == WeaponType::arrow) {arr = true;}
-                if (w->type == WeaponType::bomb) {bom = true;}
-                if (w->type == WeaponType::sword) {sw = true;}
+                if (w->type == WeaponType::arrow) has_arrow = true;
+                if (w->type == WeaponType::bomb) has_bomb = true;
+                if (w->type == WeaponType::sword) has_sword = true;
             }
-            while(!opponent->weapons.empty()) {
-                if (opponent->weapons.back()->type == WeaponType::arrow && arr) {opponent->weapons.pop_back();continue;}
-                if (opponent->weapons.back()->type == WeaponType::bomb && bom) {opponent->weapons.pop_back();continue;}
-                if (opponent->weapons.back()->type == WeaponType::sword && sw) {opponent->weapons.pop_back();continue;}
-                weapons.push_back(std::move(opponent->weapons.back()));
-                opponent->weapons.pop_back();
+            for (auto it = opponent->weapons.begin(); it != opponent->weapons.end(); ) {
+                bool should_capture = false;
+                
+                if ((*it)->type == WeaponType::arrow && !has_arrow) {
+                    should_capture = true;
+                    has_arrow = true;
+                } else if ((*it)->type == WeaponType::bomb && !has_bomb) {
+                    should_capture = true;
+                    has_bomb = true;
+                } else if ((*it)->type == WeaponType::sword && !has_sword) {
+                    should_capture = true;
+                    has_sword = true;
+                }
+                if (should_capture) {
+                    weapons.push_back(std::move(*it));
+                    it = opponent->weapons.erase(it);
+                } else {
+                    ++it;
+                }
             }
         }
 };
@@ -383,6 +421,7 @@ class wolf: public warrior {
 void headquarter::reset(){
     warriors.clear();
     loopcount = 0;
+    op_count = 0;
 };
 
 int headquarter::get_op_location() {return (N + 1 - location);}
@@ -434,8 +473,7 @@ bool headquarter::produce(int hour, int min) {
     }
 }
 
-headquarter red("red");
-headquarter blue("blue");
+
 
 class GameEngine {
     public:
@@ -511,7 +549,7 @@ void GameEngine::lion_runaway() {
                 r = nullptr;
             }
         }
-        else if (b != nullptr && b->type == WarriorType::lion) {
+        if (b != nullptr && b->type == WarriorType::lion) {
             if (b->loyalty <= 0 && i != 0) {
                 cities[i].blue_warrior = nullptr;
                 printf("%03d:%02d blue lion %d ran away\n", hour, min, b->config.mark);
@@ -525,6 +563,8 @@ void GameEngine::lion_runaway() {
 bool GameEngine::warriors_move() {
     bool r_end = false;
     bool b_end = false;
+    int r_tmp = red.op_count;
+    int b_tmp = blue.op_count;
     for (int i = N ; i >= 0; i --) {
         if (cities[i].red_warrior != nullptr) {
             if (i == N) {r_end = cities[i].red_warrior->move(K);}
@@ -541,12 +581,11 @@ bool GameEngine::warriors_move() {
         warrior* r = cities[i].red_warrior;
         warrior* b = cities[i].blue_warrior;
         if (r != nullptr) {
-            printf("%03d:%02d ", hour, min);
-            if (i == N + 1) {
-                printf("red %s %d reached blue headquarter with %d elements and force %d\n", r->config.name.c_str(), r->config.mark, r->config.life, r->config.damage);
+            if (i == N + 1 && b_tmp != blue.op_count) {
+                printf("%03d:%2d red %s %d reached blue headquarter with %d elements and force %d\n", hour, min, r->config.name.c_str(), r->config.mark, r->config.life, r->config.damage);
             }
-            else {
-                printf("red %s %d marched to city %d with %d elements and force %d\n", r->config.name.c_str(), r->config.mark, r->config.location, r->config.life, r->config.damage);
+            else if (i != N + 1) {
+                printf("%03d:%02d red %s %d marched to city %d with %d elements and force %d\n", hour, min, r->config.name.c_str(), r->config.mark, r->config.location, r->config.life, r->config.damage);
             }
             if (r_end && i == N + 1){
                 printf("%03d:%02d ", hour, min);
@@ -554,12 +593,11 @@ bool GameEngine::warriors_move() {
             }
         }
         if (b != nullptr) {
-            printf("%03d:%02d ", hour, min);
-            if (i == 0) {
-                printf("blue %s %d reached red headquarter with %d elements and force %d\n", b->config.name.c_str(), b->config.mark, b->config.life, b->config.damage);
+            if (i == 0 && r_tmp != red.op_count){
+                printf("%03d:%02d blue %s %d reached red headquarter with %d elements and force %d\n", hour, min, b->config.name.c_str(), b->config.mark, b->config.life, b->config.damage);
             }
-            else {
-                 printf("blue %s %d marched to city %d with %d elements and force %d\n", b->config.name.c_str(), b->config.mark, b->config.location, b->config.life, b->config.damage);
+            else if (i != 0) {
+                 printf("%03d:%02d blue %s %d marched to city %d with %d elements and force %d\n", hour, min, b->config.name.c_str(), b->config.mark, b->config.location, b->config.life, b->config.damage);
             }   
             if (b_end && i == 0) {
                 printf("%03d:%02d ", hour, min);
@@ -571,22 +609,22 @@ bool GameEngine::warriors_move() {
 }
 
 void GameEngine::cities_generate() {
-    for (int i = 1; i <= N; i ++) {
+    for (int i = 1; i <= N ; i ++) {
         cities[i].life += 10;
     }
 }
 
 void GameEngine::warriors_take() {
-    for (int i = 0; i <= N + 1; i ++) {
+    for (int i = 1; i <= N ; i ++) {
         if (cities[i].life == 0) {continue;}
         if (cities[i].red_warrior != nullptr && cities[i].blue_warrior == nullptr) {
             red.totallife += cities[i].life;
-            // printf("%03d:%02d red %s %d earned %d elements for his headquarter\n", hour, min, cities[i].red_warrior->config.name.c_str(), cities[i].red_warrior->config.mark, cities[i].life);
+            printf("%03d:%02d red %s %d earned %d elements for his headquarter\n", hour, min, cities[i].red_warrior->config.name.c_str(), cities[i].red_warrior->config.mark, cities[i].life);
             cities[i].life = 0;
         }
         else if (cities[i].red_warrior == nullptr && cities[i].blue_warrior != nullptr) {
             blue.totallife += cities[i].life;
-            // printf("%03d:%02d blue %s %d earned %d elements for his headquarter\n", hour, min, cities[i].blue_warrior->config.name.c_str(), cities[i].blue_warrior->config.mark, cities[i].life);
+            printf("%03d:%02d blue %s %d earned %d elements for his headquarter\n", hour, min, cities[i].blue_warrior->config.name.c_str(), cities[i].blue_warrior->config.mark, cities[i].life);
             cities[i].life = 0;
         }
     }
@@ -596,27 +634,29 @@ void GameEngine::use_arrow() {
     for (int i = 0; i <= N + 1; i ++) {
         warrior* r = cities[i].red_warrior;
         warrior* b = cities[i].blue_warrior;
-        if (r != nullptr && i + 1 < N + 1 && cities[i + 1].blue_warrior != nullptr && !r->weapons.empty()) {
+        if (r != nullptr && i < N  && cities[i + 1].blue_warrior != nullptr && !r->weapons.empty()) {
             for (auto& weapon: r->weapons) {
                 if (weapon->type == WeaponType::arrow) {
                     weapon->attack(r, cities[i + 1].blue_warrior);
                     printf("%03d:%02d red %s %d shot", hour, min, r->config.name.c_str(), r->config.mark);
                     if (cities[i + 1].blue_warrior->config.alive == false) {
-                        printf("and killed blue %s %d", cities[i + 1].blue_warrior->config.name.c_str(), cities[i + 1].blue_warrior->config.mark);
+                        printf(" and killed blue %s %d", cities[i + 1].blue_warrior->config.name.c_str(), cities[i + 1].blue_warrior->config.mark);
                     }
                     printf("\n");
+                    break;
                 }
             }
         }
-        if (b != nullptr && i - 1 > 0 && cities[i - 1].red_warrior != nullptr && !b->weapons.empty()) {
+        if (b != nullptr && i > 1 && cities[i - 1].red_warrior != nullptr && !b->weapons.empty()) {
             for (auto& weapon: b->weapons) {
                 if (weapon->type == WeaponType::arrow) {
                     weapon->attack(b, cities[i - 1].red_warrior);
                     printf("%03d:%02d blue %s %d shot", hour, min, b->config.name.c_str(), b->config.mark);
                     if (cities[i - 1].red_warrior->config.alive == false) {
-                        printf("and killed red %s %d", cities[i - 1].red_warrior->config.name.c_str(), cities[i - 1].red_warrior->config.mark);
+                        printf(" and killed red %s %d", cities[i - 1].red_warrior->config.name.c_str(), cities[i - 1].red_warrior->config.mark);
                     }
                     printf("\n");
+                    break;
                 }
             }
         }
@@ -624,52 +664,65 @@ void GameEngine::use_arrow() {
 }
 
 void GameEngine::use_bomb() {
-    for (int i = 0; i <= N + 1; i ++) {
+    auto sword_damage = [](warrior* w) {
+        int d = 0;
+        for (auto& wp : w->weapons) {
+            if (wp->type == WeaponType::sword) { d = wp->config.damage; if (d > 0) {break;} }
+        }
+        return d;
+    };
+    for (int i = 1; i <= N; i ++) {
         warrior* r = cities[i].red_warrior;
         warrior* b = cities[i].blue_warrior;
         if (r == nullptr || b == nullptr) {continue;}
+        if (!r->config.alive || !b->config.alive) {continue;}
         bool f = false;
+        int r_sword = sword_damage(r);
+        int b_sword = sword_damage(b);
+        bool red_first = (cities[i].beg_war() == "red");
+
+        int dmg_r_to_b = r->config.damage + r_sword;
+        int dmg_b_to_r = b->config.damage + b_sword;
+        int fb_r_to_b = (r->type == WarriorType::ninja ? 0 : r->config.damage / 2 + r_sword);
+        int fb_b_to_r = (b->type == WarriorType::ninja ? 0 : b->config.damage / 2 + b_sword);
+
+        bool red_will_die = false;
+        bool blue_will_die = false;
+        if (red_first) {
+            blue_will_die = (b->config.life <= dmg_r_to_b);
+            if (!blue_will_die) { 
+                red_will_die = (r->config.life <= fb_b_to_r);
+            }
+        } else {
+            red_will_die = (r->config.life <= dmg_b_to_r);
+            if (!red_will_die) {
+                blue_will_die = (b->config.life <= fb_r_to_b);
+            }
+        }
+
         if (r != nullptr && !r->weapons.empty()) {
             for (auto& weapon: r->weapons) {
             if (weapon->type == WeaponType::bomb) {
-                int b_sword = 0;
-                for (auto& w: b->weapons) {
-                    if (w->type == WeaponType::sword) {b_sword = w->config.damage; break;}
-                }
-                if (cities[i].beg_war() == "blue" && b->config.damage + b_sword >= r->config.life) {
+                if (red_will_die) {
                     weapon->attack(r, b);
                     printf("%03d:%02d red %s %d used a bomb and killed blue %s %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark);
                     f = true;
                     break;
                 }
-                else if (cities[i].beg_war() == "red" && b->config.damage / 2 + b_sword >= r->config.life) {
-                    weapon->attack(r, b);
-                    printf("%03d:%02d red %s %d used a bomb and killed blue %s %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark);
-                    f = true;
-                    break;
-                }
+                break;
             }
         }
         }
         if (b != nullptr && !b->weapons.empty()) {
             for (auto& weapon: b->weapons) {
             if (weapon->type == WeaponType::bomb) {
-                int r_sword = 0;
-                for (auto& w: r->weapons) {
-                    if (w->type == WeaponType::sword) {r_sword = w->config.damage; break;}
-                }
-                if (cities[i].beg_war() == "blue" && r->config.damage + r_sword >= b->config.life) {
+                if (blue_will_die) {
                     weapon->attack(b, r);
                     printf("%03d:%02d blue %s %d used a bomb and killed red %s %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark);
                     f = true;
                     break;
                 }
-                else if (cities[i].beg_war() == "red" && r->config.damage / 2 + r_sword >= b->config.life) {
-                    weapon->attack(b, r);
-                    printf("%03d:%02d blue %s %d used a bomb and killed red %s %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark);
-                    f = true;
-                    break;
-                }
+                break;
             }
         }
         }
@@ -697,18 +750,24 @@ void GameEngine::after_win(warrior* winner, warrior* loser, bool beg, int i) {
         cities[i].flag = tmp;
         printf("%03d:%02d %s flag raised in city %d\n", hour, min, tmp == 1?"red":"blue", i);
     }
-    else {cities[i].win_log = tmp;}
+    else if (cities[i].win_log != tmp) {
+        cities[i].win_log = tmp;
+    }
 }
 
 void GameEngine::war() {
     for (int i = 1; i <= N; i ++) {
         warrior* r = cities[i].red_warrior;
         warrior* b = cities[i].blue_warrior;
-        if (r != nullptr) {r->config.life_pre = r->config.life;}
-        if (b != nullptr) {b->config.life_pre = b->config.life;}
+        if (r != nullptr) {r->config.life_pre = r->config.life; r->config.win = false;}
+        if (b != nullptr) {b->config.life_pre = b->config.life; b->config.win = false;}
         if (r == nullptr || b == nullptr) {continue;}
         else {
             string beg = cities[i].beg_war();
+            if (r->config.alive == false && b->config.alive == false) {
+                r->lose();b->lose();
+                continue;
+            }
             if (r->config.alive == false) {
                 after_win(b, r, (beg == "blue"), i);
                 continue;
@@ -719,56 +778,66 @@ void GameEngine::war() {
             }
             if (beg == "red") {
                 weapon* r_sword = nullptr;
-                for (auto& w:r->weapons) if (w->type == WeaponType::sword) { r_sword = w.get(); break; }
+                for (auto& w:r->weapons) if (w->type == WeaponType::sword && w->config.damage > 0) { r_sword = w.get(); break; }
                 printf("%03d:%02d red %s %d attacked blue %s %d in city %d with %d elements and force %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i, r->config.life, r->config.damage);
                 r->fire(b, r_sword);
                 if (b->config.alive == false) {
-                    printf("%03d:%02d blue %s was killed in city %d\n", hour, min, b->config.name.c_str(), i);
+                    printf("%03d:%02d blue %s %d was killed in city %d\n", hour, min, b->config.name.c_str(), b->config.mark, i);
                     after_win(r, b, true, i);
                 }
                 else {
                     weapon* b_sword = nullptr;
-                    for (auto& w:b->weapons) if (w->type == WeaponType::sword) { b_sword = w.get(); break; }
-                    printf("%03d:%02d blue %s %d fought back against red %s %d in city %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i);
+                    for (auto& w:b->weapons) if (w->type == WeaponType::sword && w->config.damage > 0) { b_sword = w.get(); break; }
+                    if (b->type != WarriorType::ninja) {
+                        printf("%03d:%02d blue %s %d fought back against red %s %d in city %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i);
+                    }
                     b->feedback(r, b_sword);
                     if (r->config.alive == false) {
-                        printf("%03d:%02d red %s was killed in city %d\n", hour, min, r->config.name.c_str(), i);
+                        printf("%03d:%02d red %s %d was killed in city %d\n", hour, min, r->config.name.c_str(), r->config.mark, i);
                         after_win(b, r, false, i);
                     }
                     else {
                         r->lose();b->lose();
                         cities[i].win_log = 0;
+                        if (r->type == WarriorType::dragon && r->courage > 0.8) {
+                            printf("%03d:%2d red dragon %d yelled in city %d\n", hour, min, r->config.mark, i);
+                        }
                     }
                 }
             }
             else if (beg == "blue") {
                 weapon* b_sword = nullptr;
-                for (auto& w:b->weapons) if (w->type == WeaponType::sword) { b_sword = w.get(); break; }
+                for (auto& w:b->weapons) if (w->type == WeaponType::sword && w->config.damage > 0) { b_sword = w.get(); break; }
                 printf("%03d:%02d blue %s %d attacked red %s %d in city %d with %d elements and force %d\n", hour, min, b->config.name.c_str(), b->config.mark, r->config.name.c_str(), r->config.mark, i, b->config.life, b->config.damage);
                 b->fire(r, b_sword);
                 if (r->config.alive == false) {
-                    printf("%03d:%02d red %s was killed in city %d\n", hour, min, r->config.name.c_str(), i);
+                    printf("%03d:%02d red %s %d was killed in city %d\n", hour, min, r->config.name.c_str(), r->config.mark, i);
                     after_win(b, r, true, i);
                 }
                 else {
                     weapon* r_sword = nullptr;
-                    for (auto& w:r->weapons) if (w->type == WeaponType::sword) { r_sword = w.get(); break; }
-                    printf("%03d:%02d red %s %d fought back against blue %s %d in city %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i);
+                    for (auto& w:r->weapons) if (w->type == WeaponType::sword && w->config.damage > 0) { r_sword = w.get(); break; }
+                    if (r->type != WarriorType::ninja) {
+                        printf("%03d:%02d red %s %d fought back against blue %s %d in city %d\n", hour, min, r->config.name.c_str(), r->config.mark, b->config.name.c_str(), b->config.mark, i);
+                    }
                     r->feedback(b, r_sword);
                     if (b->config.alive == false) {
-                        printf("%03d:%02d blue %s was killed in city %d\n", hour, min, b->config.name.c_str(), i);
+                        printf("%03d:%02d blue %s %d was killed in city %d\n", hour, min, b->config.name.c_str(), b->config.mark, i);
                         after_win(r, b, false, i);
                     }
                     else {
                         r->lose();b->lose();
                         cities[i].win_log = 0;
+                        if (b->type == WarriorType::dragon && b->courage > 0.8) {
+                            printf("%03d:40 blue dragon %d yelled in city %d\n", hour, b->config.mark, i);
+                        }
                     }
                 }
             }
         }
     }
-    int r_life = 0;
-    int b_life = 0;
+    vector<int> red_win_city;
+    vector<int> blue_win_city;
     for (int i = 1;i <= N; i ++) {
         warrior* r = cities[i].red_warrior;
         if (r != nullptr && r->config.alive == false) {
@@ -776,15 +845,9 @@ void GameEngine::war() {
             continue;
         }
         if (r != nullptr && r->config.win) {
-            r_life += cities[i].life;
-            cities[i].life = 0;
-            if (red.totallife >= 8) {
-                r->config.life += 8;
-                red.totallife -= 8;
-            }
+            red_win_city.push_back(i);
         }
     }
-    red.totallife += r_life;
     for (int i = N; i >= 1; i --) {
         warrior* b = cities[i].blue_warrior;
         if (b != nullptr && b->config.alive == false) {
@@ -792,14 +855,27 @@ void GameEngine::war() {
             continue;
         }
         if (b != nullptr && b->config.win) {
-            b_life += cities[i].life;
-            cities[i].life = 0;
-            if (blue.totallife >= 8) {
-                b->config.life += 8;
-                blue.totallife -= 8;
-            }
+            blue_win_city.push_back(i);
         }
     }
+    for (int i = N; i >= 1; --i) {
+        warrior* r = cities[i].red_warrior;
+        if (r != nullptr && r->config.win && red.totallife >= 8) {
+            r->config.life += 8;
+            red.totallife -= 8;
+        }
+    }
+    for (int i = 1; i <= N; ++i) {
+        warrior* b = cities[i].blue_warrior;
+        if (b != nullptr && b->config.win && blue.totallife >= 8) {
+            b->config.life += 8;
+            blue.totallife -= 8;
+        }
+    }
+    int r_life = 0, b_life = 0;
+    for (int i: red_win_city) { r_life += cities[i].life; cities[i].life = 0; }
+    for (int i: blue_win_city) { b_life += cities[i].life; cities[i].life = 0; }
+    red.totallife += r_life;
     blue.totallife += b_life;
 }
 
@@ -812,7 +888,9 @@ void GameEngine::warriors_report() {
     for (int i = 0; i <= N + 1; i++) {
         if (cities[i].red_warrior != nullptr) {
             cities[i].red_warrior->report(hour, min);
-        }
+        } 
+    }
+    for (int i = 0; i <= N + 1; i ++) {
         if (cities[i].blue_warrior != nullptr) {
             cities[i].blue_warrior->report(hour, min);
         }
@@ -820,6 +898,7 @@ void GameEngine::warriors_report() {
 }
 
 int main() {
+    // freopen("out.txt", "w", stdout);
     int t{0};
     cin >> t;
     for (int c = 1 ;c <= t; c++) {
