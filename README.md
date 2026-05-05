@@ -1,2 +1,2 @@
 # ProgrammingDesign_Assignments
-北京大学程序设计实习2026春的个人作业题解~
+2026春北京大学程序设计实习的个人作业题解~
