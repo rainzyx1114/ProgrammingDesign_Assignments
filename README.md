@@ -1,2 +1,2 @@
 # ProgrammingDesign_Assignments
-It contains the assignments of the course named Programming design in Peking University written by rainzyx1114~
+2026春北京大学程序设计实习的个人作业题解~
